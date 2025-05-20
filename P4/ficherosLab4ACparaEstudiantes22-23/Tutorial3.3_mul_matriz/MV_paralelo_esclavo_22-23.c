@@ -60,8 +60,8 @@ int main()
 		altera_avalon_mutex_lock(mutex,2);					// bloquea mutex 
 
 		message_buffer_val 	= *(message_buffer_ptr); 			// lee valor almacenado en RAM 
-		thread_count		= *(message_buffer_threads);			// lee valor almacenado en RAM
-		Niter			= *(message_buffer_Niter);			// lee valor almacenado en RAM
+		thread_count		= *(message_buffer_threads);		// lee valor almacenado en RAM
+		Niter				= *(message_buffer_Niter);			// lee valor almacenado en RAM
 
 		if(message_buffer_val == 15 && thread_count == 2) {
 			message_buffer_val_fork 	= *(message_buffer_ptr_fork); 	// lee valor almacenado en RAM 
@@ -77,22 +77,29 @@ int main()
 	// 2 hilos: cada hilo calcula la mitad de elementos de la matriz resultado: C
 	// Hilo esclavo: la mitad inferior de la matriz C
 	//
+	/* Variables for matrix multiplication:
+	 * i: row index for matrices A and C
+	 * j: column index for matrices B and C 
+	 * k: index for dot product calculation
+	 * k1: iteration counter for repeated matrix multiplications
+	 * cij: temporary variable to store element C[i][j] during calculation
+	 */
 	int i, j, k, k1, iteraciones = 0, cij;
-	int local_n 	 = n / thread_count;
-	int my_first_row = rank * local_n;		 	// 1a fila asignada a este hilo
-	int my_last_row  = (rank+1) * local_n - 1;  		// ultima fila asignada a este hilo
+	int local_n 	 = n / thread_count;		// numero de filas por hilo
+	int my_first_row = rank * local_n;			// 1a fila asignada a este hilo
+	int my_last_row  = (rank+1) * local_n - 1;	// ultima fila asignada a este hilo
 
-	for (k1 = 0; k1 < Niter; k1++) {
+	for (k1 = 0; k1 < Niter; k1++) {				// Repite el calculo Niter veces	
 	   	iteraciones++;
-		for (i=my_first_row; i<=my_last_row; i++){
-	       		for (j=0; j<n; j++){
-				cij = C[i*n+j];  // cij ← C[i][j]
-				for(k=0; k<n; k++){
-					cij += A[i*n+k] * B[k*n+j]; // cij += A[i][k]*B[k][j]
+		for (i=my_first_row; i<=my_last_row; i++){	// Bucle sobre las filas de C y A
+	       		for (j=0; j<n; j++){				// Bucle sobre las columnas de B y C
+				cij = C[i*n+j];  					// cij ← C[i][j] - Carga el valor de C[i][j] en cij
+				for(k=0; k<n; k++){					// Bucle sobre las columnas de A y B
+					cij += A[i*n+k] * B[k*n+j]; 	// cij += A[i][k]*B[k][j] - Multiplica A[i][k] y B[k][j] y suma el resultado a cij
 				}
-				C[i*n+j] = cij;  // C[i][j] ← cij
+				C[i*n+j] = cij;  					// C[i][j] ← cij - Almacena el resultado en C[i][j]
 		   	}
-	    	}
+	    }
 	}
 
 	//
