@@ -37,8 +37,8 @@ int rank = 0; 					// hilo maestro para nucleo= CPU
 
 // Las siguientes constantes se encuentran definidas en fichero system.h
 #define tipoNios2   ALT_CPU_CPU_IMPLEMENTATION 	// "fast" (Nios II/f), "tiny" (Nios II/e), "small" (Nios II/s)
-#define nombreNios2 ALT_CPU_NAME 		// "CPU" (nucleo 1), "CPU2" (nucleo 2)
-#define size_dCache ALT_CPU_DCACHE_SIZE		// tamanyo de la dCache
+#define nombreNios2 ALT_CPU_NAME 				// "CPU" (nucleo 1), "CPU2" (nucleo 2)
+#define size_dCache ALT_CPU_DCACHE_SIZE			// tamanyo de la dCache
 
 // inicializaMemoria : Inicializa zona memoria compartida
 //
@@ -73,6 +73,16 @@ void inicializaMemoria(int ini_printf){
 		   printf("\n");
 	   }
 	   else if (ini_printf == 2){
+		   /* Imprime las direcciones de memoria de las filas i-ésimas de las matrices:
+		    * - &C[i*n]: Dirección base de la fila i de la matriz C 
+		    * - &A[i*n]: Dirección base de la fila i de la matriz A
+		    * - &B[i*n]: Dirección base de la fila i de la matriz B
+		    * Las direcciones se imprimen en hexadecimal para verificar 
+		    * que están en las zonas de memoria correctas:
+		    * C: 0x806800-0x8068FF
+		    * A: 0x806000-0x8060FF  
+		    * B: 0x806400-0x8064FF
+		    */
 		   printf("C[%i]= 0x%x\tA[%i]= 0x%x\tB[%i]= 0x%x\n", 
 		   	i, (unsigned int) &C[i*n], i, (unsigned int) &A[i*n], i, (unsigned int) &B[i*n]);
 	   }
@@ -84,7 +94,7 @@ void inicializaMemoria(int ini_printf){
 int main()
 {
 	 int thread_count	= 1    ; 	// opciones: 1,2; numero de hilos
-	 int Niter		= 30000; 	// opciones: 1000,2000,10000,20000,...; veces repite matriz-vector
+	 int Niter		= 30000; 		// opciones: 1000,2000,10000,20000,...; veces repite matriz-vector
 	 int dumy, start, iteraciones = 0, timeInterval = 0, timeInterval2 = 0;
 	 alt_u32 freq		= 0    ;
 	 unsigned int time[5];
@@ -97,7 +107,7 @@ int main()
   	 // direccion del dispositivo mutex de exclusion mutua 
   	 alt_mutex_dev* mutex = altera_avalon_mutex_open("/dev/message_buffer_mutex");
 
-  	 alt_putstr("\n\nMatriz x Vector Paralelo - CPU Mestro - BEGIN\n");
+  	 alt_putstr("\n\nMatriz x Matriz Paralelo - CPU Maestro - BEGIN\n");
   	 printf("\tNombre procesador Nios II\t: %s\n", nombreNios2);
   	 printf("\tTipo procesador Nios II\t\t: %s\n", tipoNios2);
   	 printf("\tTamano dCache Nios II\t\t: %i bytes\n", size_dCache);
@@ -124,7 +134,7 @@ int main()
 	//
 	altera_avalon_mutex_lock(mutex,1); 				// bloquea mutex
 
-	message_buffer_val 		= *(message_buffer_ptr); 	// lee valor de RAM sincronizacion
+	message_buffer_val 			= *(message_buffer_ptr); 		// lee valor de RAM sincronizacion
 	message_buffer_val_fork 	= *(message_buffer_ptr_fork); 	// lee valor de RAM sincronizacion
 	message_buffer_val_join 	= *(message_buffer_ptr_join); 	// lee valor de RAM sincronizacion
 
@@ -146,7 +156,7 @@ int main()
 	//    *(message_buffer_ptr) 	 = 15
 	//    *(message_buffer_ptr_fork) = 1
 	//
-	message_buffer_val 		= 15;  // ID=15(0xF) indica que Fork empieza
+	message_buffer_val 			= 15;  // ID=15(0xF) indica que Fork empieza
 	message_buffer_val_fork 	= 1 ;  // indica que maestro esta preparado para computo
 
 
@@ -154,12 +164,12 @@ int main()
 
 	altera_avalon_mutex_lock(mutex,1);				// bloquea mutex
 
-	*(message_buffer_ptr) 		= message_buffer_val; 		// inicializa RAM FORK
+	*(message_buffer_ptr) 		= message_buffer_val; 			// inicializa RAM FORK
 	*(message_buffer_ptr_fork) 	= message_buffer_val_fork;  	// inicializa RAM FORK
-	*(message_buffer_threads) 	= thread_count;  		// inicializa RAM FORK
-	*(message_buffer_Niter) 	= Niter;  			// inicializa RAM FORK
+	*(message_buffer_threads) 	= thread_count;  				// inicializa RAM FORK
+	*(message_buffer_Niter) 	= Niter;  						// inicializa RAM FORK
 
-	altera_avalon_mutex_unlock(mutex); 				// libera mutex
+	altera_avalon_mutex_unlock(mutex); 							// libera mutex
 
 
 	// bucle while de espera de la sincronizacion de los hilos en FORK
@@ -204,25 +214,33 @@ int main()
 	// time2: marca tiempo inicial computo y final de FORK
 	time[2] = alt_timestamp();
 
+	/* Variables for matrix multiplication:
+	 * i: row index for matrices A and C
+	 * j: column index for matrices B and C 
+	 * k: index for dot product calculation
+	 * k1: iteration counter for repeated matrix multiplications
+	 * cij: temporary variable to store element C[i][j] during calculation
+	 */
 	int i, j, k, k1, cij;
-	int local_n 	 = n / thread_count;
+	int local_n 	 = n / thread_count;		// numero de filas por hilo
 	int my_first_row = rank * local_n;			// 1a fila asignada a este hilo
-	int my_last_row  = (rank+1) * local_n - 1;  		// ultima fila asignada a este hilo
+	int my_last_row  = (rank+1) * local_n - 1;	// ultima fila asignada a este hilo
 
 	printf("\nEmpieza el computo Matriz-Matriz, numero iteraciones: %i\n", Niter);
 
-	for (k1 = 0; k1 < Niter; k1++) {
+	for (k1 = 0; k1 < Niter; k1++) {				// Repite el calculo Niter veces
 	   	iteraciones++;
-		for (i=my_first_row; i<=my_last_row; i++){
-	       		for (j=0; j<n; j++){
-				cij = C[i*n+j];  // cij ← C[i][j]
-				for(k=0; k<n; k++){
-					cij += A[i*n+k] * B[k*n+j]; // cij += A[i][k]*B[k][j]
+		for (i=my_first_row; i<=my_last_row; i++){	// Bucle sobre las filas de C y A
+	       		for (j=0; j<n; j++){				// Bucle sobre las columnas de B y C
+				cij = C[i*n+j];  					// cij ← C[i][j] - Carga el valor de C[i][j] en cij
+				for(k=0; k<n; k++){					// Bucle sobre las columnas de A y B
+					cij += A[i*n+k] * B[k*n+j]; 	// cij += A[i][k]*B[k][j] - Multiplica A[i][k] y B[k][j] y suma el resultado a cij
 				}
-				C[i*n+j] = cij;  // C[i][j] ← cij
+				C[i*n+j] = cij; 					// C[i][j] ← cij - Almacena el resultado en C[i][j]
 		   	}
-	    	}
+	    }
 	}
+	// Fin del bucle de iteraciones
 
 	//
 	// JOIN - Sincronizacion de union
