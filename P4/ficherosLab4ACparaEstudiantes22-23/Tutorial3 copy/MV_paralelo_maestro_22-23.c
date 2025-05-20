@@ -25,14 +25,12 @@ volatile unsigned int * message_buffer_ptr_fork = (unsigned int *) (MESSAGE_BUFF
 volatile unsigned int * message_buffer_threads  = (unsigned int *) (MESSAGE_BUFFER_RAM_BASE+12);
 volatile unsigned int * message_buffer_Niter    = (unsigned int *) (MESSAGE_BUFFER_RAM_BASE+16);
 
-// Zona de memoria compartida para matriz A y vectores x, y
-volatile int * A	= (int *) 0x806000; 	// 16x16x4=1KiB: 0x806000 - 0x8063FF
-volatile int * x 	= (int *) 0x806400; 	// 16x1 x4=64 B: 0x806400 - 0x80643F
-volatile int * y	= (int *) 0x806800; 	// 16x1 x4=64 B: 0x806800 - 0x80683F
+// Zona de memoria compartida para matrices A, B y C
+volatile int * A	= (int *) 0x806000; 	// 8x8x4=256 B: 0x806000 - 0x8060FF
+volatile int * B 	= (int *) 0x806400; 	// 8x8x4=256 B: 0x806400 - 0x8064FF
+volatile int * C	= (int *) 0x806800; 	// 8x8x4=256 B: 0x806800 - 0x8068FF
 
-#define m 16 					// numero de columnas de las matrices
-#define n 16 					// numero de filas de las matrices
-
+#define n 8 					// tamaño de las matrices 8x8
 #define sleepTime 100000
 
 int rank = 0; 					// hilo maestro para nucleo= CPU
@@ -44,14 +42,14 @@ int rank = 0; 					// hilo maestro para nucleo= CPU
 
 // inicializaMemoria : Inicializa zona memoria compartida
 //
-// ini_printf=0: inicializa valores de las matrices A, x, y
-// ini_printf=1: printf de valores de A, x, y
-// ini_printf=2: printf de direcciones de A, x, y
+// ini_printf=0: inicializa valores de las matrices A, B, C
+// ini_printf=1: printf de valores de A, B, C
+// ini_printf=2: printf de direcciones de A, B, C
 //
 void inicializaMemoria(int ini_printf){
    int i,j;
    if (ini_printf == 0){
-	   printf("\nInicializa Matriz y Vector\n");
+	   printf("\nInicializa Matrices\n");
    }
    else if (ini_printf == 1){
 	   printf("\nPRINTF VALORES\n");
@@ -61,32 +59,22 @@ void inicializaMemoria(int ini_printf){
    }
    for (i=0; i<n; i++){
 	   if (ini_printf == 0){
-		   x[i] = (int)i;
-		   y[i] = 0.0;
+		   for (j=0; j<n; j++) {
+			   A[i*n+j] = (int)i+j;
+			   B[i*n+j] = (int)i-j;
+			   C[i*n+j] = 0;
+		   }
 	   }
 	   else if (ini_printf == 1){
-		   printf("y[%2i]= %i"   , i, (int)y[i]);
-		   printf("\tx[%2i]= %2i", i, (int)x[i]);
-		   printf("\tA[%2i]= "   , i);
+		   printf("C[%2i]= ", i);
+		   for (j=0; j<n; j++) {
+			   printf("%3i ", (int)C[i*n+j]);
+		   }
+		   printf("\n");
 	   }
 	   else if (ini_printf == 2){
-		   printf("y[%i]= 0x%x"  , i, (unsigned int) &y[i]);
-		   printf("\tx[%i]= 0x%x", i, (unsigned int) &x[i]);
-		   printf("\tA[%i][]= "  , i);
-	   }
-	   for(j=0; j<m; j++){
-		   if (ini_printf == 0){
-			   A[i*m+j]=(int)j;
-		   }
-		   else if (ini_printf == 1){
-			   printf("%i ", (int)A[i*m+j]);
-		   }
-		   else if (ini_printf == 2){
-			   printf(" 0x%x ", (unsigned int) &A[i*m+j]);
-		   }
-	   }
-	   if (ini_printf == 1 || ini_printf == 2){
-		   printf("\n");
+		   printf("C[%i]= 0x%x\tA[%i]= 0x%x\tB[%i]= 0x%x\n", 
+		   	i, (unsigned int) &C[i*n], i, (unsigned int) &A[i*n], i, (unsigned int) &B[i*n]);
 	   }
    }
 }
@@ -132,7 +120,7 @@ int main()
 	// INCIALIZACION DE VARIABLES
 	//
 
-	// Lee RAM de sincronizacion, se obliga a hacerlo con exclusi�n mutua
+	// Lee RAM de sincronizacion, se obliga a hacerlo con exclusión mutua
 	//
 	altera_avalon_mutex_lock(mutex,1); 				// bloquea mutex
 
@@ -142,8 +130,8 @@ int main()
 
 	altera_avalon_mutex_unlock(mutex); 				// libera mutex
 
-	inicializaMemoria(0);			// se inicializan los valores de A,x,y
-	inicializaMemoria(1);			// se visualizan los valores de la matriz A
+	inicializaMemoria(0);			// se inicializan los valores de A,B,C
+	inicializaMemoria(1);			// se visualizan los valores de la matriz C
 
 	alt_putstr("\nCPU - antes FORK\n");
 	printf("\tmessage_buffer_val:\t\t%08X\n\tmessage_buffer_val_fork:\t%08X\n\tmessage_buffer_val_join:\t%08X\n",
@@ -162,7 +150,7 @@ int main()
 	message_buffer_val_fork 	= 1 ;  // indica que maestro esta preparado para computo
 
 
-	// Escribe RAM de sincronizacion, se obliga a hacerlo con exclusi�n mutua
+	// Escribe RAM de sincronizacion, se obliga a hacerlo con exclusión mutua
 
 	altera_avalon_mutex_lock(mutex,1);				// bloquea mutex
 
@@ -209,28 +197,30 @@ int main()
 
 
 	//
-	// COMPUTO MAESTRO - Operacion Matriz x Vector - repetido Niter veces
-	// 1 hilo : el hilo calcula todo el vector resultado : y
-	// 2 hilos: cada hilo calcula la mitad de elementos del vector resultado: y
+	// COMPUTO MAESTRO - Operacion Matriz x Matriz - repetido Niter veces
+	// 1 hilo : el hilo calcula toda la matriz resultado : C
+	// 2 hilos: cada hilo calcula la mitad de elementos de la matriz resultado: C
 	//
 	// time2: marca tiempo inicial computo y final de FORK
 	time[2] = alt_timestamp();
 
-	int i, j, k1, k;
+	int i, j, k, k1, cij;
 	int local_n 	 = n / thread_count;
 	int my_first_row = rank * local_n;			// 1a fila asignada a este hilo
 	int my_last_row  = (rank+1) * local_n - 1;  		// ultima fila asignada a este hilo
 
-	printf("\nEmpieza el computo Matriz-Vector, numero iteraciones: %i\n", Niter);
+	printf("\nEmpieza el computo Matriz-Matriz, numero iteraciones: %i\n", Niter);
 
 	for (k1 = 0; k1 < Niter; k1++) {
 	   	iteraciones++;
 		for (i=my_first_row; i<=my_last_row; i++){
-	       		dumy = y[i];
-		   	for(j=0; j<m; j++){
-			   dumy = dumy + A[i*m+j] * x[j];
+	       		for (j=0; j<n; j++){
+				cij = C[i*n+j];  // cij ← C[i][j]
+				for(k=0; k<n; k++){
+					cij += A[i*n+k] * B[k*n+j]; // cij += A[i][k]*B[k][j]
+				}
+				C[i*n+j] = cij;  // C[i][j] ← cij
 		   	}
-		   	y[i] = dumy;
 	    	}
 	}
 

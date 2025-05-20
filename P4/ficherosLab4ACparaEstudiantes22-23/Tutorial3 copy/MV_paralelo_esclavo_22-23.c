@@ -21,13 +21,12 @@ volatile unsigned int * message_buffer_ptr_fork = (unsigned int *) (MESSAGE_BUFF
 volatile unsigned int * message_buffer_threads  = (unsigned int *) (MESSAGE_BUFFER_RAM_BASE+12);
 volatile unsigned int * message_buffer_Niter    = (unsigned int *) (MESSAGE_BUFFER_RAM_BASE+16);
 
-// Zona de memoria compartida para matriz A y vectores x, y
-volatile int * A	= (int *) 0x806000; 	// 16x16x4=1KiB: 0x806000 - 0x8063FF
-volatile int * x 	= (int *) 0x806400; 	// 16x1 x4=64 B: 0x806400 - 0x80643F
-volatile int * y	= (int *) 0x806800; 	// 16x1 x4=64 B: 0x806800 - 0x80683F
+// Zona de memoria compartida para matrices A, B y C
+volatile int * A	= (int *) 0x806000; 	// 8x8x4=256 B: 0x806000 - 0x8060FF
+volatile int * B 	= (int *) 0x806400; 	// 8x8x4=256 B: 0x806400 - 0x8064FF
+volatile int * C	= (int *) 0x806800; 	// 8x8x4=256 B: 0x806800 - 0x8068FF
 
-#define m 16 					// numero de columnas de las matrices
-#define n 16 					// numero de filas de las matrices
+#define n 8 					// tamaño de las matrices 8x8
 
 int rank = 1; 					// hilo esclavo para nucleo= CPU2
 
@@ -74,11 +73,11 @@ int main()
 	}
 
 	//
-	// COMPUTO ESCLAVO - Operacion Matriz x Vector - repetido Niter veces
-	// 2 hilos: cada hilo calcula la mitad de elementos del vector resultado: y
-	// Hilo esclavo: la mitad inferior de la matriz A
+	// COMPUTO ESCLAVO - Operacion Matriz x Matriz - repetido Niter veces
+	// 2 hilos: cada hilo calcula la mitad de elementos de la matriz resultado: C
+	// Hilo esclavo: la mitad inferior de la matriz C
 	//
-	int i, j, k1, iteraciones = 0, dumy;
+	int i, j, k, k1, iteraciones = 0, cij;
 	int local_n 	 = n / thread_count;
 	int my_first_row = rank * local_n;		 	// 1a fila asignada a este hilo
 	int my_last_row  = (rank+1) * local_n - 1;  		// ultima fila asignada a este hilo
@@ -86,11 +85,13 @@ int main()
 	for (k1 = 0; k1 < Niter; k1++) {
 	   	iteraciones++;
 		for (i=my_first_row; i<=my_last_row; i++){
-	       		dumy = y[i];
-		   	for(j=0; j<m; j++){
-			   dumy = dumy + A[i*m+j] * x[j];
+	       		for (j=0; j<n; j++){
+				cij = C[i*n+j];  // cij ← C[i][j]
+				for(k=0; k<n; k++){
+					cij += A[i*n+k] * B[k*n+j]; // cij += A[i][k]*B[k][j]
+				}
+				C[i*n+j] = cij;  // C[i][j] ← cij
 		   	}
-		   	y[i] = dumy;
 	    	}
 	}
 
