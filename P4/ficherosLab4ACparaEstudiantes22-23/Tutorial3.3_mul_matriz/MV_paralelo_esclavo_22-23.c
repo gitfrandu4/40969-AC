@@ -37,11 +37,11 @@ int rank = 1; 					// hilo esclavo para nucleo= CPU2
 //
 int main()
 {
-	int message_buffer_val 		= 0x0;  // variable local, copia de variable global
+	int message_buffer_val 			= 0x0;  // variable local, copia de variable global
 	int message_buffer_val_fork 	= 0x0;  // variable local, copia de variable global
 	int message_buffer_val_join 	= 0x0;  // variable local, copia de variable global
-	int thread_count 		= 0;	// variable local, copia de variable global
-	int Niter		 	= 0;	// variable local, copia de variable global
+	int thread_count 				= 0;	// variable local, copia de variable global
+	int Niter		 				= 0;	// variable local, copia de variable global
 	*(message_buffer_ptr_fork)	|= 0;	// no hace nada, pero es necesario inicializar puntero porque si no se cuelga cuando se usa Nios II/s
 
   	 // direccion del dispositivo mutex de exclusion mutua 
